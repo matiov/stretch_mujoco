@@ -201,49 +201,26 @@ def model_generation_wizard(
     # Add the object placements to the xml
     click.secho(f"\nMaking Object Placements for task [{task}]...\n", fg="yellow")
     object_placements_info = {}
-    # for i in range(len(env.object_cfgs)):
-    #     obj_name = env.object_cfgs[i]["name"]
-    #     category = env.object_cfgs[i]["info"]["cat"]
-    #     object_placements = env.object_placements
-    #     print(
-    #         f"Placing [Object {i}] (category: {category}, body_name: {obj_name}_main) at "
-    #         f"pos: {np.round(object_placements[obj_name][0],2)} quat: {np.round(object_placements[obj_name][1],2)}"
-    #     )
-    #     xml = xml_modify_body_pos(
-    #         xml,
-    #         "body",
-    #         obj_name + "_main",  # Object name ref in the xml
-    #         pos=object_placements[obj_name][0],
-    #         quat=object_placements[obj_name][1],
-    #     )
-    #     object_placements_info[obj_name + "_main"] = {
-    #         "cat": category,
-    #         "pos": object_placements[obj_name][0],
-    #         "quat": object_placements[obj_name][1],
-    #     }
-
-    # Add custom object
-    obj_name = env.object_cfgs[0]["name"]
-    category = "coffee_cup"
-    object_placements = env.object_placements
-    object_placements[obj_name][0] = np.array([0.6, -0.9, 1.0])
-    object_placements[obj_name][1] = np.array([0.677074, 0.0, 0.0, -0.7359148])
-    print(
-            f"Placing [Object 0] (category: {category}, body_name: {obj_name}_main) at "
+    for i in range(len(env.object_cfgs)):
+        obj_name = env.object_cfgs[i]["name"]
+        category = env.object_cfgs[i]["info"]["cat"]
+        object_placements = env.object_placements
+        print(
+            f"Placing [Object {i}] (category: {category}, body_name: {obj_name}_main) at "
             f"pos: {np.round(object_placements[obj_name][0],2)} quat: {np.round(object_placements[obj_name][1],2)}"
         )
-    xml = xml_modify_body_pos(
-        xml,
-        "body",
-        obj_name + "_main",  # Object name ref in the xml
-        pos=object_placements[obj_name][0],
-        quat=object_placements[obj_name][1],
-    )
-    object_placements_info[obj_name + "_main"] = {
-        "cat": category,
-        "pos": object_placements[obj_name][0],
-        "quat": object_placements[obj_name][1],
-    }
+        xml = xml_modify_body_pos(
+            xml,
+            "body",
+            obj_name + "_main",  # Object name ref in the xml
+            pos=object_placements[obj_name][0],
+            quat=object_placements[obj_name][1],
+        )
+        object_placements_info[obj_name + "_main"] = {
+            "cat": category,
+            "pos": object_placements[obj_name][0],
+            "quat": object_placements[obj_name][1],
+        }
 
     xml, robot_base_fixture_pose = custom_cleanups(xml)
 
