@@ -198,19 +198,6 @@ def model_generation_wizard(
     model = env.sim.model._model
     xml = env.sim.model.get_xml()
 
-    print(
-        colored(
-            f"Objects:\n {', '.join([obj_cfg['name'] for obj_cfg in env.object_cfgs])}",
-            "green",
-        )
-    )
-    print(
-        colored(
-            f"Placement:\n {env.object_placements}",
-            "green",
-        )
-    )
-
     # Add the object placements to the xml
     click.secho(f"\nMaking Object Placements for task [{task}]...\n", fg="yellow")
     object_placements_info = {}
