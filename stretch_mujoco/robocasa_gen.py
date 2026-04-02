@@ -206,7 +206,7 @@ def model_generation_wizard(
     )
     print(
         colored(
-            f"Placement:\n {', '.join([f'{obj_cfg['name']}: {env.object_placements[obj_cfg['name']]}' for obj_cfg in env.object_cfgs])}",
+            f"Placement:\n {env.object_placements}",
             "green",
         )
     )
