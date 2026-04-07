@@ -37,6 +37,7 @@ class StatusStretchJoints:
     wrist_pitch: PositionVelocity
     wrist_roll: PositionVelocity
     gripper: PositionVelocity
+    object_poses: dict[str, dict[str, list[float]]]
 
     def __getitem__(self, name:str):
         """For backward compatibility: allows access with the square brackets []"""
@@ -70,5 +71,6 @@ class StatusStretchJoints:
             PositionVelocity.default(),
             PositionVelocity.default(),
             PositionVelocity.default(),
-            PositionVelocity.default()
+            PositionVelocity.default(),
+            {},
         )
