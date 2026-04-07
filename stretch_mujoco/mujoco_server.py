@@ -512,6 +512,22 @@ class MujocoServer:
             new_status.base.theta,
         ) = self.base_controller.get_base_pose()
 
+        # Get Object positions
+        body_names = ["distr_counter_main"] # TODO: find a way to correlate body names in the xml with object names
+        object_names = ["cofee_cup"]  # TODO: see how to generalize this or pass it as argument somewhere
+        for i, body in enumerate(body_names):
+            try:
+                xyz = np.round(self.mjdata.body(body).xpos, 3)
+                rotation = self.mjdata.body(body).xmat.reshape(3, 3)
+                rpy = np.round(utils.rotation_matrix_to_euler(rotation), 3)
+                new_status.object_poses[object_names[i]] = {
+                    "position": xyz,
+                    "rotation": rpy,
+                }
+            except Exception as e:
+                print(f"Error getting position for object {body}: {e}")
+                continue
+
         self.data_proxies.set_status(new_status)
 
     def _to_real_gripper_range(self, pos: float) -> float:
