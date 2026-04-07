@@ -428,6 +428,25 @@ def switch_to_glfw_renderer(mjmodel: MjModel, renderer: mujoco.Renderer):
     renderer._mjr_context.readDepthMap = mujoco._enums.mjtDepthMap.mjDEPTH_ZEROFAR
 
 
+def rotation_matrix_to_euler(R: np.ndarray) -> np.ndarray:
+    """
+    Convert a rotation matrix to Euler angles (roll, pitch, yaw)
+    """
+    sy = math.sqrt(R[0, 0] * R[0, 0] + R[1, 0] * R[1, 0])
+    singular = sy < 1e-6
+
+    if not singular:
+        roll = math.atan2(R[2, 1], R[2, 2])
+        pitch = math.atan2(-R[2, 0], sy)
+        yaw = math.atan2(R[1, 0], R[0, 0])
+    else:
+        roll = math.atan2(-R[1, 2], R[1, 1])
+        pitch = math.atan2(-R[2, 0], sy)
+        yaw = 0
+
+    return np.array([roll, pitch, yaw])
+
+
 try:
     # Only Python >12 has override.
     override = __import__("typing").override
