@@ -50,8 +50,8 @@ class StretchMujocoSimulator:
         model: MjModel | None = None,
         camera_hz: float = 30,
         cameras_to_use: list[StretchCameras] = [],
-        start_translation: list|None = None,
-        start_rotation_quat: list|None = None
+        start_translation: list | None = None,
+        start_rotation_quat: list | None = None,
     ) -> None:
         self.scene_xml_path = scene_xml_path
         self.model = model
@@ -265,7 +265,7 @@ class StretchMujocoSimulator:
         return bool(np.isclose(current_position, set_position, atol=position_tolerance))
 
     def wait_until_at_setpoint(
-        self, actuator: str | Actuators, timeout: float = 5.0, position_tolerance: float = 0.05
+        self, actuator: str | Actuators, timeout: float = 10.0, position_tolerance: float = 0.05
     ):
         """Blocks until the actuator reaches its previously set point."""
         if isinstance(actuator, str):
@@ -299,7 +299,7 @@ class StretchMujocoSimulator:
     def wait_while_is_moving(
         self,
         actuator: str | Actuators,
-        timeout: float | None = 5.0,
+        timeout: float | None = 10.0,
         check_interval: float = 0.1,
         position_tolerance: float = 0.0005,
     ):
@@ -320,9 +320,7 @@ class StretchMujocoSimulator:
                 Actuators.base_rotate,
                 Actuators.base_translate,
             ]:
-                current_position = actuator.get_position_relative(
-                    self.pull_status()
-                )
+                current_position = actuator.get_position_relative(self.pull_status())
                 if actuator == Actuators.left_wheel_vel or actuator == Actuators.base_translate:
                     current_position = current_position[0]
                 elif actuator == Actuators.right_wheel_vel:
@@ -376,9 +374,14 @@ class StretchMujocoSimulator:
             Actuators.base_rotate,
             Actuators.base_translate,
         ]:
-            raise Exception(
-                f"Cannot set an absolute position for a continuous joint {actuator.name}"
+            # Base and wheel command-group joints are continuous/incremental.
+            # Treat move_to for these joints as a relative move to avoid crashing callers.
+            click.secho(
+                f"Warning: move_to called for continuous joint {actuator.name}; interpreting as move_by.",
+                fg="yellow",
             )
+            self.move_by(actuator, pos)
+            return
 
         with self._command_lock:
             command = self.data_proxies.get_command()
