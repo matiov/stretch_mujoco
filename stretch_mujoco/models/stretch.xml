@@ -15,7 +15,7 @@
       <general biastype="affine"/>
       <default class="wheel">
         <joint axis="0 0 1" damping="0.1" frictionloss="35" armature="0.1" stiffness="0.01"/>
-        <velocity gear="3" kv="20" ctrlrange="-35 35"/>
+        <velocity gear="3" kv="20" ctrlrange="-6 6"/>
       </default>
       <default class="lift">
         <joint type="slide" axis="0 0 1" damping="35" stiffness="0.03" armature="0.01" range="0.0 1.1" frictionloss="1.5"/>
