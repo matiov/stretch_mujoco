@@ -26,7 +26,11 @@ from stretch_mujoco.mujoco_server_camera_manager import (
     MujocoServerCameraManagerThreaded,
     MujocoServerCameraManagerSync,
 )
-from stretch_mujoco.datamodels.status_command import CommandBaseVelocity, CommandMove, StatusCommand
+from stretch_mujoco.datamodels.status_command import (
+    CommandBaseVelocity,
+    CommandMove,
+    StatusCommand,
+)
 from stretch_mujoco.mujoco_server_sensor_manager import MujocoServerSensorManagerThreaded
 import stretch_mujoco.utils as utils
 from stretch_mujoco.utils import FpsCounter
@@ -172,6 +176,15 @@ class BaseController:
             omega: float, angular velocity
         """
         w_left, w_right = utils.diff_drive_inv_kinematics(v_linear, omega)
+        # if self.mujoco_server.physics_fps_counter._fps_counter == 1:
+        #     click.secho(
+        #         f"Received velocities: {v_linear, omega}",
+        #         fg="green",
+        #     )
+        #     click.secho(
+        #         f"Setting velocity to wheels: {w_left, w_right}",
+        #         fg="green",
+        #     )
         self.mujoco_server.mjdata.actuator(Actuators.left_wheel_vel.name).ctrl = w_left
         self.mujoco_server.mjdata.actuator(Actuators.right_wheel_vel.name).ctrl = w_right
 
@@ -193,42 +206,49 @@ class MujocoServer:
         stop_mujoco_process_event: threading.Event,
         data_proxies: MujocoServerProxies,
         cameras_to_use: list[StretchCameras],
-        start_translation: list|None,
-        start_rotation_quat: list|None
+        start_translation: list | None,
+        start_rotation_quat: list | None,
     ):
-        server = cls(scene_xml_path, model, stop_mujoco_process_event, data_proxies,start_translation , start_rotation_quat)
+        server = cls(
+            scene_xml_path,
+            model,
+            stop_mujoco_process_event,
+            data_proxies,
+            start_translation,
+            start_rotation_quat,
+        )
         server.run(
             show_viewer_ui=show_viewer_ui,
             camera_hz=camera_hz,
             cameras_to_use=cameras_to_use,
         )
 
-    def change_start_pose(self,model: MjModel, translation: list|None, rotation_quat: list|None):
+    def change_start_pose(
+        self, model: MjModel, translation: list | None, rotation_quat: list | None
+    ):
         body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "base_link")
-        
+
         if body_id == -1:
             raise ValueError("Body 'base_link' not found in the MjModel.")
-    
+
         joint_id = -1
         for j in range(model.njnt):
             if model.jnt_bodyid[j] == body_id:
                 joint_id = j
                 break
-    
+
         # Since the model has a Free Joint, we must change the default QPOS (qpos0).
         qadr = model.jnt_qposadr[joint_id]
 
         if translation is not None:
-            model.qpos0[qadr:qadr+3] = translation
-            
+            model.qpos0[qadr : qadr + 3] = translation
+
         if rotation_quat is not None:
-            model.qpos0[qadr+3:qadr+7] = rotation_quat
+            model.qpos0[qadr + 3 : qadr + 7] = rotation_quat
 
         print(f"Start pose: {model.qpos0[qadr:qadr+3]}, {model.qpos0[qadr+3:qadr+7]}")
 
         return model
-        
-
 
     def __init__(
         self,
@@ -236,8 +256,8 @@ class MujocoServer:
         model: MjModel | None,
         stop_mujoco_process_event: threading.Event,
         data_proxies: MujocoServerProxies,
-        start_translation: list|None,
-        start_rotation_quat: list|None
+        start_translation: list | None,
+        start_rotation_quat: list | None,
     ):
         """
         Initialize the Simulator handle with a scene
@@ -254,6 +274,7 @@ class MujocoServer:
         model = self.change_start_pose(model, start_translation, start_rotation_quat)
 
         self.mjmodel = model
+        # utils.print_wheel_velocity_ctrlranges(self.mjmodel)
 
         self.mjdata = MjData(self.mjmodel)
 
@@ -513,8 +534,12 @@ class MujocoServer:
         ) = self.base_controller.get_base_pose()
 
         # Get Object positions
-        body_names = ["distr_counter_main"] # TODO: find a way to correlate body names in the xml with object names
-        object_names = ["coffee_cup"]  # TODO: see how to generalize this or pass it as argument somewhere
+        body_names = [
+            "distr_counter_main"
+        ]  # TODO: find a way to correlate body names in the xml with object names
+        object_names = [
+            "coffee_cup"
+        ]  # TODO: see how to generalize this or pass it as argument somewhere
         for i, body in enumerate(body_names):
             try:
                 xyz = np.round(self.mjdata.body(body).xpos, 3)
@@ -540,7 +565,7 @@ class MujocoServer:
             config.robot_settings["gripper_min_max"],
         )
 
-    def push_command(self, command_status:StatusCommand):
+    def push_command(self, command_status: StatusCommand):
         """
         Handles setting mujoco ctrl properties to move joints.
         """
