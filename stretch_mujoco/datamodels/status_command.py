@@ -24,6 +24,11 @@ class CommandBaseVelocity:
 
 
 @dataclass
+class CommandRespawn:
+    trigger: bool
+
+
+@dataclass
 class CommandKeyframe:
     name: str
     trigger: bool
@@ -44,11 +49,14 @@ class StatusCommand:
 
     move_to: dict[str, CommandMove] = field(default_factory=dict)
     move_by: dict[str, CommandMove] = field(default_factory=dict)
-    base_velocity: CommandBaseVelocity = field(default_factory=lambda:CommandBaseVelocity(0, 0, False))
-    keyframe: CommandKeyframe = field(default_factory=lambda:CommandKeyframe("", False))
-    coordinate_frame_arrows_viz: list[CommandCoordinateFrameArrowsViz] = field(default_factory=list)
-
-
+    base_velocity: CommandBaseVelocity = field(
+        default_factory=lambda: CommandBaseVelocity(0, 0, False)
+    )
+    respawn: CommandRespawn = field(default_factory=lambda: CommandRespawn(False))
+    keyframe: CommandKeyframe = field(default_factory=lambda: CommandKeyframe("", False))
+    coordinate_frame_arrows_viz: list[CommandCoordinateFrameArrowsViz] = field(
+        default_factory=list
+    )
 
     def set_move_to(self, command: CommandMove):
         """Sends a move_to command and removes the move_by command."""

@@ -25,6 +25,7 @@ from stretch_mujoco.datamodels.status_command import (
     CommandCoordinateFrameArrowsViz,
     CommandKeyframe,
     CommandMove,
+    CommandRespawn,
     StatusCommand,
 )
 import stretch_mujoco.utils as utils
@@ -231,6 +232,31 @@ class StretchMujocoSimulator:
             )
 
         self.wait_while_is_moving(Actuators.wrist_pitch)
+
+    @require_connection
+    def respawn(self) -> None:
+        """
+        Reset the simulation state to the startup pose configured by model.qpos0.
+        """
+        with self._command_lock:
+            command = self.data_proxies.get_command()
+            command.respawn = CommandRespawn(trigger=True)
+            self.data_proxies.set_command(command)
+
+        # Wait for the respawn command to be processed by the server
+        timeout = 5.0
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            current_command = self.data_proxies.get_command()
+            if not current_command.respawn.trigger:
+                # Respawn has been processed
+                return
+            time.sleep(0.01)
+
+        click.secho(
+            f"Timeout waiting for respawn to complete after {timeout}s.",
+            fg="red",
+        )
 
     def is_reached_set_position(self, actuator: str | Actuators, position_tolerance: float = 0.05):
         """

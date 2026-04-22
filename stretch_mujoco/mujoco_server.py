@@ -609,6 +609,12 @@ class MujocoServer:
             command_status.base_velocity.trigger = False
             self.base_controller.push_command(command_status.base_velocity)
 
+        # respawn
+        if command_status.respawn is not None and command_status.respawn.trigger:
+            command_status.respawn.trigger = False
+            mujoco._functions.mj_resetData(self.mjmodel, self.mjdata)
+            self.base_controller.last_command = None
+
         # keyframe
         if command_status.keyframe is not None and command_status.keyframe.trigger:
             command_status.keyframe.trigger = False
