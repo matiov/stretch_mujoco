@@ -34,6 +34,7 @@ from stretch_mujoco.datamodels.status_command import (
 from stretch_mujoco.mujoco_server_sensor_manager import MujocoServerSensorManagerThreaded
 import stretch_mujoco.utils as utils
 from stretch_mujoco.utils import FpsCounter
+from stretch_mujoco.grasp_manager import GraspManager
 
 
 @dataclass
@@ -294,6 +295,8 @@ class MujocoServer:
             mujoco_server=self,
         )
 
+        self.grasp_manager = GraspManager(self.mjmodel, self.mjdata)
+
         self.update_joint_limits()
 
         signal.signal(signal.SIGTERM, lambda num, h: self.request_to_stop())
@@ -475,11 +478,20 @@ class MujocoServer:
         self.mjdata = data
         self.mjmodel = model
 
+        # Update grasp manager references
+        self.grasp_manager.mjdata = data
+        self.grasp_manager.mjmodel = model
+
         if not self.mjdata or not self.mjdata.time:
             print("WARNING: no mujoco data to report")
             return
 
         self.physics_fps_counter.tick(sim_time=data.time)
+
+        # Update grasps and apply grasp constraints
+        self.grasp_manager.update_grasps()
+        self.grasp_manager.apply_grasp_constraints()
+
         self.pull_status()
         self.push_command(self.data_proxies.get_command())
 
@@ -535,7 +547,7 @@ class MujocoServer:
 
         # Get Object positions
         body_names = [
-            "distr_counter_main"
+            "distr_counter_main",
         ]  # TODO: find a way to correlate body names in the xml with object names
         object_names = [
             "coffee_cup"
@@ -550,7 +562,7 @@ class MujocoServer:
                     "rotation": rpy,
                 }
             except Exception as e:
-                print(f"Error getting position for object {body}: {e}")
+                # print(f"Error getting position for object {body}: {e}")
                 continue
 
         self.data_proxies.set_status(new_status)
