@@ -1,0 +1,32 @@
+services:
+  stretch-mujoco:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: stretch-mujoco:latest
+    container_name: stretch-mujoco
+
+    # X11 forwarding so the MuJoCo viewer window opens on your host display.
+    environment:
+      - DISPLAY=${DISPLAY}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - .:/app
+
+    # Keep stdin/tty open for keyboard teleop input.
+    stdin_open: true
+    tty: true
+
+    # Default run command: quick keyboard teleop test without RoboCasa assets.
+    command: python examples/keyboard_teleop.py --imagery-nav
+
+  stretch-mujoco-assets:
+    image: stretch-mujoco:latest
+    container_name: stretch-mujoco-assets
+    environment:
+      - DISPLAY=${DISPLAY}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    stdin_open: true
+    tty: true
+    command: sh -lc "printf 'y\\n' | python third_party/robocasa/robocasa/scripts/download_kitchen_assets.py"
