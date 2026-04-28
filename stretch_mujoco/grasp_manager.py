@@ -31,6 +31,9 @@ class GraspManager:
         # Track grasped objects: body_name -> grasp_info
         self.grasped_objects: Dict[str, Dict] = {}
 
+        # Track equality constraint IDs for welds: body_name -> eq_id
+        self._grasped_eq_ids: Dict[str, int] = {}
+
         # Gripper parameters
         self.gripper_finger_left = "link_gripper_finger_left"
         self.gripper_finger_right = "link_gripper_finger_right"
@@ -226,6 +229,23 @@ class GraspManager:
                 "relative_quat": obj_quat,
                 "grasp_time": self.mjdata.time,
             }
+
+            # --- Add weld constraint ---
+            gripper_body_id = mujoco.mj_name2id(
+                self.mjmodel, mujoco.mjtObj.mjOBJ_BODY, self.gripper_attachment_point
+            )
+            object_body_id = mujoco.mj_name2id(self.mjmodel, mujoco.mjtObj.mjOBJ_BODY, object_name)
+            if gripper_body_id >= 0 and object_body_id >= 0:
+                # Add a weld constraint (equality)
+                eq_id = mujoco.mj_addEquality(
+                    self.mjmodel,
+                    self.mjdata,
+                    mujoco.mjtEq.mjEQ_WELD,
+                    gripper_body_id,
+                    object_body_id,
+                )
+                self._grasped_eq_ids[object_name] = eq_id
+                mujoco.mj_forward(self.mjmodel, self.mjdata)
         except Exception as e:
             print(f"Error grasping object {object_name}: {e}")
 
@@ -237,6 +257,14 @@ class GraspManager:
             object_name: Name of the object body to release
         """
         if object_name in self.grasped_objects:
+            # Remove weld constraint if present
+            eq_id = self._grasped_eq_ids.pop(object_name, None)
+            if eq_id is not None:
+                try:
+                    mujoco.mj_removeEquality(self.mjmodel, self.mjdata, eq_id)
+                    mujoco.mj_forward(self.mjmodel, self.mjdata)
+                except Exception as e:
+                    print(f"Error removing weld constraint for {object_name}: {e}")
             del self.grasped_objects[object_name]
 
     def apply_grasp_constraints(self) -> None:
