@@ -18,12 +18,12 @@
         <velocity gear="3" kv="20" ctrlrange="-12 12"/>
       </default>
       <default class="lift">
-        <joint type="slide" axis="0 0 1" damping="35" stiffness="0.03" armature="0.01" range="0.0 1.1" frictionloss="1.5"/>
-        <general ctrlrange="0.0 1.1" gainprm="400" biasprm="0 -200 -100" forcerange="-70 70"/>
+        <joint type="slide" axis="0 0 1" damping="50" stiffness="0.03" armature="0.01" range="0.0 1.1" frictionloss="1.5"/>
+        <general ctrlrange="0.0 1.1" gainprm="150" biasprm="0 -200 -100" forcerange="-70 70"/>
       </default>
       <default class="telescope">
         <joint type="slide" axis="0 0 1" damping="50" stiffness="0.02" armature="0.01" range="0 0.13" frictionloss="1.5"/>
-        <general ctrlrange="0 0.52" gainprm="150" biasprm="0 -100 -10" forcerange="-56 56"/>
+        <general ctrlrange="0 0.52" gainprm="80" biasprm="0 -100 -10" forcerange="-56 56"/>
       </default>
       <default class="head">
         <joint axis="0 0 1" damping="1"/>
@@ -39,27 +39,27 @@
       </default>
 
       <default class="wrist">
-        <joint axis="0 0 1" damping="1"/>
+        <joint axis="0 0 1" damping="10"/>
         <position kp="10"/>
         <default class="wrist_yaw">
           <joint axis="0 0 -1" range="-1.39 4.42" armature="0.01" damping="7" frictionloss=".1"/>
-          <position ctrlrange="-1.39 4.42" kp="20"/>
+          <position ctrlrange="-1.39 4.42" kp="5"/>
         </default>
         <default class="wrist_pitch">
           <joint axis="0 0 1" range="-1.57 0.56" armature="0.01" frictionloss=".1"/>
-          <position ctrlrange="-1.57 0.56" kp="50"/>
+          <position ctrlrange="-1.57 0.56" kp="5"/>
         </default>
         <default class="wrist_roll">
           <joint axis="0 0 1" range="-3.14 3.14" armature="0.01" frictionloss=".1"/>
-          <position ctrlrange="-3.14 3.14" kp="20"/>
+          <position ctrlrange="-3.14 3.14" kp="5"/>
         </default>
         <default class="finger_open">
           <joint axis="0 -1 0" range="-0.6 0.6" damping="0.0001" armature="0.01" frictionloss=".1"/>
-          <position ctrlrange="-0.6 0.6" kp="4000" kv="124"/>
+          <position ctrlrange="-0.6 0.6" kp="1500" kv="100"/>
         </default>
         <default class="finger_slide">
           <joint type="slide" axis="0 0 1" range="-0.02 .04" armature="0.1" damping="0.0001"/>
-          <position ctrlrange="-0.02 .04" kp="4000" kv="124"/>
+          <position ctrlrange="-0.02 .04" kp="1500" kv="100"/>
         </default>
     </default>
 
