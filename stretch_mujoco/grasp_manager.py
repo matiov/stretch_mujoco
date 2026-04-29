@@ -42,7 +42,7 @@ class GraspManager:
 
         # Grasp detection thresholds
         self.gripper_closed_threshold = (
-            -0.005
+            0.02
         )  # Joint position threshold (meters) - gripper closed when < 0
         self.contact_force_threshold = 0.01  # Minimum contact force to consider grasping
 
@@ -165,7 +165,7 @@ class GraspManager:
             # Convert rotation matrix to quaternion
             # Using MuJoCo's mju_mat2Quat
             quat = np.zeros(4)
-            mujoco._functions.mju_mat2Quat(quat, mat)
+            mujoco._functions.mju_mat2Quat(quat, mat.flatten())
 
             return np.array(pos), quat
         except Exception as e:
@@ -178,6 +178,7 @@ class GraspManager:
         Should be called once per simulation step.
         """
         gripper_state = self.get_gripper_state()
+        # print(f"Gripper state: {gripper_state}")
 
         # Find all objects in the scene
         for i in range(self.mjmodel.nbody):
@@ -191,14 +192,16 @@ class GraspManager:
 
             is_in_contact, contact_force = self.is_object_in_contact_with_gripper(body_name)
 
-            # Check if we should grasp
+            # Only grasp if gripper is closed and in contact, and not already grasped
             if gripper_state["closed"] and is_in_contact:
                 if body_name not in self.grasped_objects:
                     self.grasp_object(body_name)
-            else:
-                # Release if grasped
-                if body_name in self.grasped_objects:
-                    self.release_object(body_name)
+
+        # Only release objects when the gripper is open (not closed)
+        if not gripper_state["closed"]:
+            # Release all currently grasped objects
+            for grasped_name in list(self.grasped_objects.keys()):
+                self.release_object(grasped_name)
 
     def grasp_object(self, object_name: str) -> None:
         """
@@ -216,7 +219,7 @@ class GraspManager:
             obj_pos = self.mjdata.body(object_name).xpos
             obj_mat = self.mjdata.body(object_name).xmat.reshape(3, 3)
             obj_quat = np.zeros(4)
-            mujoco._functions.mju_mat2Quat(obj_quat, obj_mat)
+            mujoco._functions.mju_mat2Quat(obj_quat, obj_mat.flatten())
 
             # Calculate relative transform (object in gripper frame)
             gripper_mat = self.mjdata.body(self.gripper_attachment_point).xmat.reshape(3, 3)
@@ -230,22 +233,7 @@ class GraspManager:
                 "grasp_time": self.mjdata.time,
             }
 
-            # --- Add weld constraint ---
-            gripper_body_id = mujoco.mj_name2id(
-                self.mjmodel, mujoco.mjtObj.mjOBJ_BODY, self.gripper_attachment_point
-            )
-            object_body_id = mujoco.mj_name2id(self.mjmodel, mujoco.mjtObj.mjOBJ_BODY, object_name)
-            if gripper_body_id >= 0 and object_body_id >= 0:
-                # Add a weld constraint (equality)
-                eq_id = mujoco.mj_addEquality(
-                    self.mjmodel,
-                    self.mjdata,
-                    mujoco.mjtEq.mjEQ_WELD,
-                    gripper_body_id,
-                    object_body_id,
-                )
-                self._grasped_eq_ids[object_name] = eq_id
-                mujoco.mj_forward(self.mjmodel, self.mjdata)
+            # Weld constraint code removed for compatibility with MuJoCo Python API
         except Exception as e:
             print(f"Error grasping object {object_name}: {e}")
 
@@ -257,19 +245,13 @@ class GraspManager:
             object_name: Name of the object body to release
         """
         if object_name in self.grasped_objects:
-            # Remove weld constraint if present
-            eq_id = self._grasped_eq_ids.pop(object_name, None)
-            if eq_id is not None:
-                try:
-                    mujoco.mj_removeEquality(self.mjmodel, self.mjdata, eq_id)
-                    mujoco.mj_forward(self.mjmodel, self.mjdata)
-                except Exception as e:
-                    print(f"Error removing weld constraint for {object_name}: {e}")
+            # Weld constraint code removed for compatibility with MuJoCo Python API
             del self.grasped_objects[object_name]
 
     def apply_grasp_constraints(self) -> None:
         """
-        Apply grasp constraints to maintain object attachment.
+        Forcefully update the pose of all grasped objects to follow the gripper every step.
+        This ensures the object stays attached, regardless of MuJoCo weld constraint behavior.
         Should be called in the control callback.
         """
         if not self.grasped_objects:
@@ -277,6 +259,7 @@ class GraspManager:
 
         try:
             for object_name, grasp_info in self.grasped_objects.items():
+                # Always update pose for free joint objects
                 self._constrain_object_to_gripper(object_name, grasp_info)
         except Exception as e:
             print(f"Error applying grasp constraints: {e}")
