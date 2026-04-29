@@ -39,10 +39,12 @@ class GraspManager:
         self.gripper_finger_right = "link_gripper_finger_right"
         self.gripper_attachment_point = "link_grasp_center"
         self.gripper_slider = "link_gripper_slider"
+        self.gripper_tip_left = "rubber_tip_left"
+        self.gripper_tip_right = "rubber_tip_right"
 
         # Grasp detection thresholds
         self.gripper_closed_threshold = (
-            0.02
+            0.01
         )  # Joint position threshold (meters) - gripper closed when < 0
         self.contact_force_threshold = 0.01  # Minimum contact force to consider grasping
 
@@ -128,6 +130,8 @@ class GraspManager:
             self.gripper_finger_left,
             self.gripper_finger_right,
             self.gripper_slider,
+            self.gripper_tip_left,
+            self.gripper_tip_right,
         }
 
         max_force = 0.0
@@ -142,6 +146,7 @@ class GraspManager:
                 # Contact force estimation from contact data
                 force_mag = abs(contact.solref[0]) + abs(contact.solref[1])
                 max_force = max(max_force, force_mag)
+                # print(f"Object {object_name} in contact with {other_body}")
 
         return in_contact, max_force
 
@@ -178,30 +183,34 @@ class GraspManager:
         Should be called once per simulation step.
         """
         gripper_state = self.get_gripper_state()
-        # print(f"Gripper state: {gripper_state}")
-
-        # Find all objects in the scene
-        for i in range(self.mjmodel.nbody):
-            body_name = mujoco.mj_id2name(self.mjmodel, mujoco.mjtObj.mjOBJ_BODY, i)
-            if body_name is None:
-                continue
-
-            # Skip non-object bodies
-            if not self._is_graspable_object(body_name):
-                continue
-
-            is_in_contact, contact_force = self.is_object_in_contact_with_gripper(body_name)
-
-            # Only grasp if gripper is closed and in contact, and not already grasped
-            if gripper_state["closed"] and is_in_contact:
-                if body_name not in self.grasped_objects:
-                    self.grasp_object(body_name)
 
         # Only release objects when the gripper is open (not closed)
         if not gripper_state["closed"]:
+            # print("Gripper is open, releasing all grasped objects...")
             # Release all currently grasped objects
             for grasped_name in list(self.grasped_objects.keys()):
                 self.release_object(grasped_name)
+
+        else:
+            # Find all objects in the scene
+            for i in range(self.mjmodel.nbody):
+                body_name = mujoco.mj_id2name(self.mjmodel, mujoco.mjtObj.mjOBJ_BODY, i)
+                if body_name is None:
+                    continue
+
+                # Skip non-object bodies
+                if not self._is_graspable_object(body_name):
+                    continue
+                
+                is_in_contact, contact_force = self.is_object_in_contact_with_gripper(body_name)
+
+                # Only grasp if gripper is closed and in contact, and not already grasped
+                if gripper_state["closed"] and is_in_contact:
+                    if body_name not in self.grasped_objects:
+                        print(f"Grasping object: {body_name} with contact force {contact_force}")
+                        self.grasp_object(body_name)
+
+        
 
     def grasp_object(self, object_name: str) -> None:
         """
