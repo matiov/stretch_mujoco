@@ -37,6 +37,10 @@ RUN pip install --no-cache-dir -e .
 # Install robocasa extras (numpy/numba/opencv pinned versions).
 RUN pip install --no-cache-dir -e ".[robocasa]"
 
+# Download third-party submodules if not present
+RUN if [ ! -d "third_party/robosuite/.git" ]; then git clone https://github.com/hello-binit/robosuite.git third_party/robosuite; fi
+RUN if [ ! -d "third_party/robocasa/.git" ]; then git clone https://github.com/hello-binit/robocasa.git third_party/robocasa; fi
+
 # Install third-party submodules.
 RUN pip install --no-cache-dir -e third_party/robosuite
 RUN pip install --no-cache-dir -e third_party/robocasa
