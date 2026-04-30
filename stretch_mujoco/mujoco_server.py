@@ -624,7 +624,8 @@ class MujocoServer:
         # respawn
         if command_status.respawn is not None and command_status.respawn.trigger:
             command_status.respawn.trigger = False
-            self.grasp_manager.release_object()
+            for grasped_name in list(self.grasp_manager.grasped_objects.keys()):
+                self.grasp_manager.release_object(grasped_name)
             mujoco._functions.mj_resetData(self.mjmodel, self.mjdata)
             self.base_controller.last_command = None
 
