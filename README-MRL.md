@@ -67,7 +67,7 @@ docker compose run --rm stretch-mujoco grep -n "update_grasps\|apply_grasp_const
 
 Optional: visualize the robot:
 ```bash
-docker compose run --rm stretch-mujoco python examples/spanw_robot.py
+docker compose run --rm stretch-mujoco python examples/spawn_robot.py
 ```
 
 
