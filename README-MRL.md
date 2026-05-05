@@ -65,6 +65,12 @@ Optional: verify automatic grasp hooks exist in server loop:
 docker compose run --rm stretch-mujoco grep -n "update_grasps\|apply_grasp_constraints" stretch_mujoco/mujoco_server.py
 ```
 
+Optional: visualize the robot:
+```bash
+docker compose run --rm stretch-mujoco python examples/spanw_robot.py
+```
+
+
 Expected: both calls appear in the control callback.
 
 ## 6. Run the quick grasp test (recommended)

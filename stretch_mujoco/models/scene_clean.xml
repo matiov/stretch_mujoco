@@ -1,0 +1,14 @@
+<mujoco model="stretch scene">
+  <include file="stretch.xml"/>
+
+  <statistic center="0 0 .75" extent="1.2" meansize="0.05"/>
+
+  <asset>
+    <material name="floor" rgba="0.8 0.8 0.8 1" reflectance="0.0"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 0" dir="0 0 -1" directional="true"/>
+    <geom name="floor" size="0 0 0.05" type="plane" material="floor"/>
+  </worldbody>
+</mujoco>
