@@ -69,7 +69,7 @@ Expected: both calls appear in the control callback.
 
 ## 6. Run the quick grasp test (recommended)
 
-### 6.1.b Run the automated grasp test script
+### Run the automated grasp test script
 
 To run the automated grasp test (no keyboard required), use:
 
@@ -85,7 +85,7 @@ This will:
 
 You can adjust the script parameters in `examples/auto_grasp_test.py` if needed.
 
-### 6.1 Start the simulation
+### Start the simulation
 
 ```bash
 docker compose up stretch-mujoco
@@ -112,7 +112,7 @@ Q                  Stop
 ```
 
 
-### 6.2 Test procedure
+### Test procedure
 
 1. Open the gripper using N.
 2. Move the robot and arm so the gripper encloses a target object.
@@ -120,7 +120,7 @@ Q                  Stop
 4. Lift and move the arm/base while keeping gripper closed.
 5. Open gripper with N.
 
-### 6.3 Pass criteria
+### Pass criteria
 
 - While closed and in contact: object follows the end effector.
 - While moving around: object stays attached and does not immediately fall.
