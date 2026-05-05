@@ -34,4 +34,8 @@ viewer_window = {
     "max_attempts": 60,
 }
 
-# TODO: Add params to tune joints response motion profiles
+REPLACEMENTS = {
+    "distr_counter_main": "coffee_cup",
+    "object1": "blue_box",
+    "object2": "red_cylinder",
+}

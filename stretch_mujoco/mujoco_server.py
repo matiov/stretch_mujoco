@@ -546,12 +546,8 @@ class MujocoServer:
         ) = self.base_controller.get_base_pose()
 
         # Get Object positions
-        body_names = [
-            "distr_counter_main",
-        ]  # TODO: find a way to correlate body names in the xml with object names
-        object_names = [
-            "coffee_cup"
-        ]  # TODO: see how to generalize this or pass it as argument somewhere
+        body_names = list(config.REPLACEMENTS.keys())
+        object_names = list(config.REPLACEMENTS.values())
         for i, body in enumerate(body_names):
             try:
                 xyz = np.round(self.mjdata.body(body).xpos, 3)

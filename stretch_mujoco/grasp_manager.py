@@ -4,8 +4,10 @@ Handles object grasping and attachment to the robot gripper.
 """
 
 import numpy as np
-from typing import Dict, Optional, Tuple
+from typing import Dict, Tuple
 import mujoco
+
+import stretch_mujoco.config as config
 
 
 class GraspManager:
@@ -44,8 +46,8 @@ class GraspManager:
 
         # Grasp detection thresholds
         self.gripper_closed_threshold = (
-            0.01
-        )  # Joint position threshold (meters) - gripper closed when < 0
+            0.01  # Joint position threshold (meters) - gripper closed when < 0
+        )
         self.contact_force_threshold = 0.01  # Minimum contact force to consider grasping
 
     def get_gripper_state(self) -> Dict:
@@ -201,16 +203,15 @@ class GraspManager:
                 # Skip non-object bodies
                 if not self._is_graspable_object(body_name):
                     continue
-                
+
                 is_in_contact, contact_force = self.is_object_in_contact_with_gripper(body_name)
 
                 # Only grasp if gripper is closed and in contact, and not already grasped
                 if gripper_state["closed"] and is_in_contact:
                     if body_name not in self.grasped_objects:
-                        print(f"Grasping object: {body_name} with contact force {contact_force}")
+                        obj_name = config.REPLACEMENTS[body_name]
+                        print(f"Grasping object: {obj_name} with contact force {contact_force}")
                         self.grasp_object(body_name)
-
-        
 
     def grasp_object(self, object_name: str) -> None:
         """
