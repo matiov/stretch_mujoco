@@ -4,7 +4,7 @@
   <statistic center="0 0 .75" extent="1.2" meansize="0.05"/>
 
   <asset>
-    <material name="floor" rgba="0.8 0.8 0.8 1" reflectance="0.0"/>
+    <material name="floor" rgba="1 1 1 1" reflectance="0.0"/>
   </asset>
 
   <worldbody>
