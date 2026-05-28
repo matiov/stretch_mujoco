@@ -29,6 +29,13 @@ class CommandRespawn:
 
 
 @dataclass
+class CommandTeleport:
+    position: tuple[float, float, float]
+    rotation_quat: tuple[float, float, float, float]
+    trigger: bool
+
+
+@dataclass
 class CommandKeyframe:
     name: str
     trigger: bool
@@ -53,6 +60,9 @@ class StatusCommand:
         default_factory=lambda: CommandBaseVelocity(0, 0, False)
     )
     respawn: CommandRespawn = field(default_factory=lambda: CommandRespawn(False))
+    teleport: CommandTeleport = field(
+        default_factory=lambda: CommandTeleport((0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0), False)
+    )
     keyframe: CommandKeyframe = field(default_factory=lambda: CommandKeyframe("", False))
     coordinate_frame_arrows_viz: list[CommandCoordinateFrameArrowsViz] = field(
         default_factory=list

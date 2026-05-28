@@ -29,6 +29,7 @@ from stretch_mujoco.mujoco_server_camera_manager import (
 from stretch_mujoco.datamodels.status_command import (
     CommandBaseVelocity,
     CommandMove,
+    CommandTeleport,
     StatusCommand,
 )
 from stretch_mujoco.mujoco_server_sensor_manager import MujocoServerSensorManagerThreaded
@@ -298,6 +299,16 @@ class MujocoServer:
         self.grasp_manager = GraspManager(self.mjmodel, self.mjdata)
 
         self.update_joint_limits()
+
+        # Cache the free joint addresses for base_link (used by teleport)
+        base_body_id = mujoco.mj_name2id(self.mjmodel, mujoco.mjtObj.mjOBJ_BODY, "base_link")
+        self._base_link_qadr: int = -1
+        self._base_link_qdadr: int = -1
+        for j in range(self.mjmodel.njnt):
+            if self.mjmodel.jnt_bodyid[j] == base_body_id:
+                self._base_link_qadr = int(self.mjmodel.jnt_qposadr[j])
+                self._base_link_qdadr = int(self.mjmodel.jnt_dofadr[j])
+                break
 
         signal.signal(signal.SIGTERM, lambda num, h: self.request_to_stop())
         signal.signal(signal.SIGINT, lambda num, h: self.request_to_stop())
@@ -624,6 +635,18 @@ class MujocoServer:
                 self.grasp_manager.release_object(grasped_name)
             mujoco._functions.mj_resetData(self.mjmodel, self.mjdata)
             self.base_controller.last_command = None
+
+        # teleport
+        if command_status.teleport is not None and command_status.teleport.trigger:
+            command_status.teleport.trigger = False
+            if self._base_link_qadr != -1:
+                qadr = self._base_link_qadr
+                qdadr = self._base_link_qdadr
+                self.mjdata.qpos[qadr : qadr + 3] = command_status.teleport.position
+                self.mjdata.qpos[qadr + 3 : qadr + 7] = command_status.teleport.rotation_quat
+                self.mjdata.qvel[qdadr : qdadr + 6] = 0
+                mujoco._functions.mj_forward(self.mjmodel, self.mjdata)
+                self.base_controller.last_command = None
 
         # keyframe
         if command_status.keyframe is not None and command_status.keyframe.trigger:

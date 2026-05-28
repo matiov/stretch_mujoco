@@ -26,6 +26,7 @@ from stretch_mujoco.datamodels.status_command import (
     CommandKeyframe,
     CommandMove,
     CommandRespawn,
+    CommandTeleport,
     StatusCommand,
 )
 import stretch_mujoco.utils as utils
@@ -255,6 +256,41 @@ class StretchMujocoSimulator:
 
         click.secho(
             f"Timeout waiting for respawn to complete after {timeout}s.",
+            fg="red",
+        )
+
+    @require_connection
+    def teleport(
+        self,
+        position: tuple[float, float, float],
+        rotation_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0),
+    ) -> None:
+        """
+        Teleport the robot to a specified pose without resetting the simulation state.
+        Args:
+            position: (x, y, z) position in the world frame
+            rotation_quat: (w, x, y, z) quaternion for orientation (defaults to identity)
+        """
+        with self._command_lock:
+            command = self.data_proxies.get_command()
+            command.teleport = CommandTeleport(
+                position=position,
+                rotation_quat=rotation_quat,
+                trigger=True,
+            )
+            self.data_proxies.set_command(command)
+
+        # Wait for the teleport command to be processed by the server
+        timeout = 5.0
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            current_command = self.data_proxies.get_command()
+            if not current_command.teleport.trigger:
+                return
+            time.sleep(0.01)
+
+        click.secho(
+            f"Timeout waiting for teleport to complete after {timeout}s.",
             fg="red",
         )
 
