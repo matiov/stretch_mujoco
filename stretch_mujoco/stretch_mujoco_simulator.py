@@ -23,6 +23,7 @@ from stretch_mujoco.mujoco_server_passive import MujocoServerPassive
 from stretch_mujoco.datamodels.status_command import (
     CommandBaseVelocity,
     CommandCoordinateFrameArrowsViz,
+    CommandGraspObject,
     CommandKeyframe,
     CommandMove,
     CommandRespawn,
@@ -331,6 +332,35 @@ class StretchMujocoSimulator:
 
         click.secho(
             f"Timeout waiting for teleport_object to complete after {timeout}s.",
+            fg="red",
+        )
+
+    @require_connection
+    def spawn_object_in_gripper(self, object_name: str) -> None:
+        """
+        Teleport an object to the gripper's current pose and immediately grasp it.
+        Useful for setting up test scenarios where the robot should start holding an object.
+        The object_name is resolved through config.REPLACEMENTS before lookup.
+        Args:
+            object_name: logical or model name of the object (e.g. "coffee_cup")
+        """
+        with self._command_lock:
+            command = self.data_proxies.get_command()
+            command.grasp_object = CommandGraspObject(
+                object_name=object_name,
+                trigger=True,
+            )
+            self.data_proxies.set_command(command)
+
+        timeout = 5.0
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            if not self.data_proxies.get_command().grasp_object.trigger:
+                return
+            time.sleep(0.01)
+
+        click.secho(
+            f"Timeout waiting for spawn_object_in_gripper to complete after {timeout}s.",
             fg="red",
         )
 

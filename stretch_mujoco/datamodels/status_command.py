@@ -44,6 +44,12 @@ class CommandTeleportObject:
 
 
 @dataclass
+class CommandGraspObject:
+    object_name: str
+    trigger: bool
+
+
+@dataclass
 class CommandKeyframe:
     name: str
     trigger: bool
@@ -76,6 +82,7 @@ class StatusCommand:
             "", (0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0), False
         )
     )
+    grasp_object: CommandGraspObject = field(default_factory=lambda: CommandGraspObject("", False))
     keyframe: CommandKeyframe = field(default_factory=lambda: CommandKeyframe("", False))
     coordinate_frame_arrows_viz: list[CommandCoordinateFrameArrowsViz] = field(
         default_factory=list

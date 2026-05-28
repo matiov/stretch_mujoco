@@ -28,6 +28,7 @@ from stretch_mujoco.mujoco_server_camera_manager import (
 )
 from stretch_mujoco.datamodels.status_command import (
     CommandBaseVelocity,
+    CommandGraspObject,
     CommandMove,
     CommandTeleport,
     CommandTeleportObject,
@@ -678,6 +679,30 @@ class MujocoServer:
                     )
                     self.mjdata.qvel[qdadr : qdadr + 6] = 0
                     mujoco._functions.mj_forward(self.mjmodel, self.mjdata)
+
+        # grasp_object: teleport object to gripper and force-attach it
+        if command_status.grasp_object is not None and command_status.grasp_object.trigger:
+            command_status.grasp_object.trigger = False
+            raw_name = command_status.grasp_object.object_name
+            resolved_name = next(
+                (k for k, v in config.REPLACEMENTS.items() if v == raw_name), raw_name
+            )
+            body_id = mujoco.mj_name2id(self.mjmodel, mujoco.mjtObj.mjOBJ_BODY, resolved_name)
+            if body_id < 0:
+                click.secho(
+                    f"grasp_object: body '{resolved_name}' not found in model.",
+                    fg="red",
+                )
+            else:
+                jnt_adr = self.mjmodel.body_jntadr[body_id]
+                if jnt_adr >= 0 and self.mjmodel.jnt_type[jnt_adr] == mujoco.mjtJoint.mjJNT_FREE:
+                    qadr = int(self.mjmodel.jnt_qposadr[jnt_adr])
+                    qdadr = int(self.mjmodel.jnt_dofadr[jnt_adr])
+                    grasp_pos = self.mjdata.body("link_grasp_center").xpos.copy()
+                    self.mjdata.qpos[qadr : qadr + 3] = grasp_pos
+                    self.mjdata.qvel[qdadr : qdadr + 6] = 0
+                    mujoco._functions.mj_forward(self.mjmodel, self.mjdata)
+                self.grasp_manager.grasp_object(resolved_name)
 
         # keyframe
         if command_status.keyframe is not None and command_status.keyframe.trigger:
