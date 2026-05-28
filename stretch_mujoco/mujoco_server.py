@@ -30,6 +30,7 @@ from stretch_mujoco.datamodels.status_command import (
     CommandBaseVelocity,
     CommandMove,
     CommandTeleport,
+    CommandTeleportObject,
     StatusCommand,
 )
 from stretch_mujoco.mujoco_server_sensor_manager import MujocoServerSensorManagerThreaded
@@ -647,6 +648,36 @@ class MujocoServer:
                 self.mjdata.qvel[qdadr : qdadr + 6] = 0
                 mujoco._functions.mj_forward(self.mjmodel, self.mjdata)
                 self.base_controller.last_command = None
+
+        # teleport_object
+        if command_status.teleport_object is not None and command_status.teleport_object.trigger:
+            command_status.teleport_object.trigger = False
+            raw_name = command_status.teleport_object.object_name
+            resolved_name = next(
+                (k for k, v in config.REPLACEMENTS.items() if v == raw_name), None
+            )
+            body_id = mujoco.mj_name2id(self.mjmodel, mujoco.mjtObj.mjOBJ_BODY, resolved_name)
+            if body_id < 0:
+                click.secho(
+                    f"teleport_object: body '{resolved_name}' not found in model.",
+                    fg="red",
+                )
+            else:
+                jnt_adr = self.mjmodel.body_jntadr[body_id]
+                if jnt_adr < 0 or self.mjmodel.jnt_type[jnt_adr] != mujoco.mjtJoint.mjJNT_FREE:
+                    click.secho(
+                        f"teleport_object: body '{resolved_name}' has no free joint; cannot teleport.",
+                        fg="red",
+                    )
+                else:
+                    qadr = int(self.mjmodel.jnt_qposadr[jnt_adr])
+                    qdadr = int(self.mjmodel.jnt_dofadr[jnt_adr])
+                    self.mjdata.qpos[qadr : qadr + 3] = command_status.teleport_object.position
+                    self.mjdata.qpos[qadr + 3 : qadr + 7] = (
+                        command_status.teleport_object.rotation_quat
+                    )
+                    self.mjdata.qvel[qdadr : qdadr + 6] = 0
+                    mujoco._functions.mj_forward(self.mjmodel, self.mjdata)
 
         # keyframe
         if command_status.keyframe is not None and command_status.keyframe.trigger:
