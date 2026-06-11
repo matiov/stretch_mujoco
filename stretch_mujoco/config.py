@@ -36,6 +36,7 @@ viewer_window = {
 
 REPLACEMENTS = {
     "distr_counter_main": "coffee_cup",
+    "coffee_machine_left_group_main": "coffee_machine",
     "object1": "blue_box",
     "object2": "red_cylinder",
 }
