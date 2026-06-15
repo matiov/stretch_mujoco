@@ -13,6 +13,7 @@ import numpy as np
 from mujoco._structs import MjModel
 
 from stretch_mujoco.datamodels.status_stretch_camera import StatusStretchCameras
+from stretch_mujoco.datamodels.status_stretch_contacts import ContactInfo, StatusStretchContacts
 from stretch_mujoco.datamodels.status_stretch_joints import StatusStretchJoints
 from stretch_mujoco.datamodels.status_stretch_sensors import StatusStretchSensors
 from stretch_mujoco.enums.actuators import Actuators
@@ -640,6 +641,33 @@ class StretchMujocoSimulator:
         Pull robot joint states from the simulator and return as a StatusStretchJoints
         """
         return self.data_proxies.get_status()
+
+    @require_connection
+    def pull_contacts(self) -> StatusStretchContacts:
+        """
+        Return a snapshot of all contacts that are active in the most recent physics step.
+
+        Synchronization:
+          The MuJoCo physics loop (in the server process) updates the shared contacts proxy
+          every step, overwriting it with *only* the currently-active contacts.  Calling
+          pull_contacts() gives you a consistent read of the latest published snapshot —
+          no history is retained, so two calls separated by a physics step will reflect
+          exactly what changed between those steps.
+
+        Returns:
+            StatusStretchContacts with a `contacts` list of ContactInfo and the
+            `sim_time` of the step at which the snapshot was taken.
+
+        Example::
+
+            contacts = sim.pull_contacts()
+            for c in contacts.contacts:
+                print(c.category, c.body1_name, c.body2_name, c.normal_force)
+
+            # Check specifically for base collisions:
+            base_hits = [c for c in contacts.contacts if "base" in c.category]
+        """
+        return self.data_proxies.get_contacts()
 
     @require_connection
     def pull_joint_limits(self) -> dict[Actuators, tuple[float, float]]:

@@ -16,6 +16,7 @@ from mujoco._structs import MjData, MjModel
 import mujoco._enums
 
 from stretch_mujoco.datamodels.status_stretch_camera import StatusStretchCameras
+from stretch_mujoco.datamodels.status_stretch_contacts import ContactInfo, StatusStretchContacts
 from stretch_mujoco.datamodels.status_stretch_joints import StatusStretchJoints
 from stretch_mujoco.datamodels.status_stretch_sensors import StatusStretchSensors
 from stretch_mujoco.enums.actuators import Actuators
@@ -38,6 +39,7 @@ from stretch_mujoco.mujoco_server_sensor_manager import MujocoServerSensorManage
 import stretch_mujoco.utils as utils
 from stretch_mujoco.utils import FpsCounter
 from stretch_mujoco.grasp_manager import GraspManager
+from stretch_mujoco.contact_logger import ContactLogger
 
 
 @dataclass
@@ -47,6 +49,7 @@ class MujocoServerProxies:
     _cameras: "DictProxy[str, StatusStretchCameras]"
     _sensors: "DictProxy[str, StatusStretchSensors]"
     _joint_limits: "DictProxy[str, dict[Actuators, tuple[float, float]]]"
+    _contacts: "DictProxy[str, StatusStretchContacts]"
 
     def __setattr__(self, name: str, value) -> None:
         try:
@@ -87,6 +90,12 @@ class MujocoServerProxies:
 
         self._joint_limits["val"] = limits
 
+    def get_contacts(self) -> StatusStretchContacts:
+        return self._contacts["val"]
+
+    def set_contacts(self, value: StatusStretchContacts) -> None:
+        self._contacts["val"] = value
+
     @staticmethod
     def default(manager: SyncManager) -> "MujocoServerProxies":
         return MujocoServerProxies(
@@ -95,6 +104,7 @@ class MujocoServerProxies:
             _cameras=manager.dict({"val": StatusStretchCameras.default()}),
             _sensors=manager.dict({"val": StatusStretchSensors.default()}),
             _joint_limits=manager.dict({"val": {}}),
+            _contacts=manager.dict({"val": StatusStretchContacts.default()}),
         )
 
 
@@ -300,6 +310,14 @@ class MujocoServer:
 
         self.grasp_manager = GraspManager(self.mjmodel, self.mjdata)
 
+        # ContactLogger runs inside this process and has direct access to mjmodel/mjdata.
+        # verbose=False: we publish via the proxy instead of printing per-step.
+        self.contact_logger = ContactLogger(
+            mjmodel=self.mjmodel,
+            mjdata=self.mjdata,
+            verbose=False,
+        )
+
         self.update_joint_limits()
 
         # Cache the free joint addresses for base_link (used by teleport)
@@ -495,6 +513,10 @@ class MujocoServer:
         self.grasp_manager.mjdata = data
         self.grasp_manager.mjmodel = model
 
+        # Keep contact logger in sync with the same step's data
+        self.contact_logger.mjdata = data
+        self.contact_logger.mjmodel = model
+
         if not self.mjdata or not self.mjdata.time:
             print("WARNING: no mujoco data to report")
             return
@@ -505,8 +527,36 @@ class MujocoServer:
         self.grasp_manager.update_grasps()
         self.grasp_manager.apply_grasp_constraints()
 
+        # Publish current active contacts to the shared proxy so pull_contacts() can read them.
+        self.contact_logger.update()
+        self._publish_contacts()
+
         self.pull_status()
         self.push_command(self.data_proxies.get_command())
+
+    def _publish_contacts(self) -> None:
+        """
+        Snapshot the currently-active contacts from the ContactLogger and push them
+        to the shared proxy so the main process can read them via pull_contacts().
+        Only contacts that are active *right now* are included; history is discarded.
+        """
+        active = list(self.contact_logger._active_contacts.values())
+        status = StatusStretchContacts(
+            contacts=[
+                ContactInfo(
+                    sim_time=ev.sim_time,
+                    body1_name=ev.body1_name,
+                    body2_name=ev.body2_name,
+                    geom1_name=ev.geom1_name,
+                    geom2_name=ev.geom2_name,
+                    normal_force=ev.normal_force,
+                    category=ev.category,
+                )
+                for ev in active
+            ],
+            sim_time=self.mjdata.time,
+        )
+        self.data_proxies.set_contacts(status)
 
     def pull_status(self):
         """
