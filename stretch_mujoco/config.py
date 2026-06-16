@@ -13,10 +13,10 @@ base_motion = {"timeout": 15, "default_x_vel": 0.3, "default_r_vel": 1.0}
 # Default free-camera pose for the Mujoco UI viewer.
 # Tune these values if you want a different startup viewpoint.
 viewer_camera = {
-    "lookat": [0.080, 0.048, -0.969],
-    "distance": 10.117,
-    "azimuth": 121.250,
-    "elevation": -25.500,
+    "lookat": [2.2, 0.6, -2.2],
+    "distance": 12.3,
+    "azimuth": 90.0,
+    "elevation": -46.0,
 }
 
 # Print free-camera values while manually moving the Mujoco viewer camera.
