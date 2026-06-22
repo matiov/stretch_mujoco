@@ -43,7 +43,7 @@
         <position kp="10"/>
         <default class="wrist_yaw">
           <joint axis="0 0 -1" range="-1.39 4.42" armature="0.01" damping="7" frictionloss=".1"/>
-          <position ctrlrange="-1.39 4.42" kp="20"/>
+          <position ctrlrange="-1.39 4.42" kp="10"/>
         </default>
         <default class="wrist_pitch">
           <joint axis="0 0 1" range="-1.57 0.56" armature="0.01" frictionloss=".1"/>
