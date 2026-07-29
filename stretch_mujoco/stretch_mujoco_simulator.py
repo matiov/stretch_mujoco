@@ -76,6 +76,12 @@ class StretchMujocoSimulator:
 
         self._command_lock = Lock()
 
+        # Per-actuator last-sampled-position cache used by `wait_while_is_moving()`
+        # to detect settling. Instance-level (not shared across simulator instances)
+        # and cleared per-actuator in `move_by()`/`move_to()` so a new command always
+        # starts from a fresh baseline instead of the previous command's resting spot.
+        self._last_movement_positions: dict[Actuators, float | tuple[float, float, float]] = {}
+
     def start(
         self, show_viewer_ui: bool = False, headless: bool = False, use_passive_viewer: bool = True
     ) -> None:
@@ -427,8 +433,6 @@ class StretchMujocoSimulator:
             return False
         return True
 
-    _last_movement_positions: dict[Actuators, float | tuple[float, float, float]] = {}
-
     def wait_while_is_moving(
         self,
         actuator: str | Actuators,
@@ -516,6 +520,12 @@ class StretchMujocoSimulator:
             self.move_by(actuator, pos)
             return
 
+        # Drop any cached settling baseline: it reflects where this actuator came to
+        # rest after its *previous* command, not the motion being issued now, and
+        # would otherwise let `wait_while_is_moving()` mistake the start of this new
+        # move for an already-settled state.
+        self._last_movement_positions.pop(actuator, None)
+
         with self._command_lock:
             command = self.data_proxies.get_command()
             command.set_move_to(CommandMove(actuator_name=actuator.name, pos=pos, trigger=True))
@@ -543,6 +553,11 @@ class StretchMujocoSimulator:
             raise Exception(
                 f"Cannot set an absolute position for a continuous joint {actuator.name}"
             )
+
+        # See the matching note in `move_to()`: a stale cached position from the
+        # previous command would otherwise let `wait_while_is_moving()` declare this
+        # new move "settled" after a single sample taken right as it starts.
+        self._last_movement_positions.pop(actuator, None)
 
         with self._command_lock:
             command = self.data_proxies.get_command()
