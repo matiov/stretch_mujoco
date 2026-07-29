@@ -44,6 +44,20 @@ class GraspManager:
         self._gripper_body_ids: Set[int] = set()
         self._excluded_body_pairs: Set[Tuple[int, int]] = set()
         self._recently_released_objects: Dict[str, float] = {}
+        self._gripper_was_open: bool = True
+
+        # Tracks mjdata.time so a sim reset (mj_resetData, respawn, etc.) can be detected: time
+        # rewinding means every absolute-time timestamp we've stored (regrasp cooldowns, the
+        # debug log throttle) is stale and must be cleared, or it can silently block re-grasping
+        # for as long as the previous run had been going.
+        self._last_seen_sim_time: float = mjdata.time
+
+        # Temporary diagnostics: throttled reporting of near-gripper contact state, to help
+        # pin down where a real grasp attempt is failing (contact never happening vs. happening
+        # against an unexpected body vs. some other gate). Remove once grasping is reliable.
+        self.debug_logging = False
+        self._debug_log_interval_seconds = 0.5
+        self._last_debug_log_time = float("-inf")
 
         # Gripper parameters
         self.gripper_finger_left = "link_gripper_finger_left"
@@ -65,7 +79,7 @@ class GraspManager:
         Get current gripper state.
 
         Returns:
-            Dict with gripper_closed (bool), joint_pos (float), and finger_positions
+            Dict with gripper_closed (bool), joint_pos (float), and ctrl (float)
         """
         try:
             # Get gripper slide joint position (main gripper actuator)
@@ -77,17 +91,28 @@ class GraspManager:
 
             gripper_pos = self.mjdata.qpos[self.mjmodel.jnt_qposadr[gripper_joint]]
 
-            # Gripper is considered closed when joint position is negative (fingers moved inward)
-            # Adjust threshold based on your gripper's range
-            gripper_closed = gripper_pos < self.gripper_closed_threshold
+            gripper_actuator = mujoco.mj_name2id(
+                self.mjmodel, mujoco.mjtObj.mjOBJ_ACTUATOR, "gripper"
+            )
+            if gripper_actuator < 0:
+                raise ValueError("Gripper actuator not found")
+            gripper_ctrl = self.mjdata.ctrl[gripper_actuator]
+
+            # Base "closed" on the commanded target (ctrl), not the measured joint position.
+            # The slide actuator is stiff (kp=4000) and stalls against whatever it's squeezing,
+            # so once an object is between the cups the measured qpos plateaus well above the
+            # threshold even though the gripper was commanded fully closed. Gating on qpos meant
+            # grasping silently failed for any object thick enough to block full closure.
+            gripper_closed = gripper_ctrl < self.gripper_closed_threshold
 
             return {
                 "closed": gripper_closed,
                 "joint_pos": gripper_pos,
+                "ctrl": gripper_ctrl,
             }
         except Exception as e:
             print(f"Error getting gripper state: {e}")
-            return {"closed": False, "joint_pos": 0.0}
+            return {"closed": False, "joint_pos": 0.0, "ctrl": 0.0}
 
     def get_body_contacts(self, body_name: str) -> list:
         """
@@ -128,7 +153,14 @@ class GraspManager:
 
     def is_object_in_contact_with_gripper(self, object_name: str) -> Tuple[bool, float]:
         """
-        Check if object is in contact with gripper.
+        Check if the object is pinched between the two fingers, i.e. in contact with the left
+        side of the gripper AND the right side simultaneously.
+
+        A single-sided touch (e.g. only the right finger grazing the object, from whichever
+        direction) is not a grasp: for a parallel-jaw gripper the only way both sides register
+        contact on the same body at once is if it's actually nested between them, so requiring
+        both is a robust stand-in for "the object is within the two fingers" without needing to
+        reason about contact normals directly.
 
         Args:
             object_name: Name of the object body
@@ -138,27 +170,30 @@ class GraspManager:
         """
         contacts = self.get_body_contacts(object_name)
 
-        graspable_bodies = {
-            self.gripper_finger_left,
-            self.gripper_finger_right,
-            self.gripper_slider,
-            self.gripper_tip_left,
-            self.gripper_tip_right,
-        }
+        left_bodies = {self.gripper_finger_left, self.gripper_tip_left}
+        right_bodies = {self.gripper_finger_right, self.gripper_tip_right}
 
         max_force = 0.0
-        in_contact = False
+        left_touching = False
+        right_touching = False
 
         for contact_info in contacts:
             other_body = contact_info["other_body"]
-            if other_body in graspable_bodies:
-                in_contact = True
-                # Estimate contact force (simplified - using normal force)
-                contact = contact_info["contact"]
-                # Contact force estimation from contact data
-                force_mag = abs(contact.solref[0]) + abs(contact.solref[1])
-                max_force = max(max_force, force_mag)
-                # print(f"Object {object_name} in contact with {other_body}")
+            if other_body in left_bodies:
+                left_touching = True
+            elif other_body in right_bodies:
+                right_touching = True
+            else:
+                continue
+
+            # Estimate contact force (simplified - using normal force)
+            contact = contact_info["contact"]
+            # Contact force estimation from contact data
+            force_mag = abs(contact.solref[0]) + abs(contact.solref[1])
+            max_force = max(max_force, force_mag)
+            # print(f"Object {object_name} in contact with {other_body}")
+
+        in_contact = left_touching and right_touching
 
         return in_contact, max_force
 
@@ -364,43 +399,105 @@ class GraspManager:
 
         return True
 
+    def _handle_possible_sim_reset(self) -> None:
+        """
+        Detect mjdata.time rewinding (mj_resetData / respawn / any other reset) and drop all
+        absolute-time bookkeeping. Without this, a regrasp cooldown timestamped e.g. 45.35s before
+        a reset stays in _recently_released_objects and silently blocks grasping that same body
+        name until sim time climbs all the way back past 45.35s post-reset.
+        """
+        current_time = self.mjdata.time
+        if current_time < self._last_seen_sim_time:
+            self._recently_released_objects.clear()
+            self._last_debug_log_time = float("-inf")
+            self._gripper_was_open = not self.get_gripper_state()["closed"]
+        self._last_seen_sim_time = current_time
+
     def update_grasps(self) -> None:
         """
         Update grasp state for all objects.
         Should be called once per simulation step.
         """
+        self._handle_possible_sim_reset()
         gripper_state = self.get_gripper_state()
         self._prune_regrasp_cooldowns()
 
-        # Only release objects when the gripper is open (not closed)
-        if not gripper_state["closed"]:
-            # print("Gripper is open, releasing all grasped objects...")
-            # Release all currently grasped objects
+        # Release fires on the rising edge of "open" (a fresh open command) rather than on
+        # every step where the gripper merely reads as open. Grasping (below) no longer requires
+        # the gripper to read "closed", so a contact-triggered grasp can happen while ctrl is
+        # still at whatever open-ish value it had before the close command arrived; using a level
+        # trigger here would immediately release that same object on the very next step just
+        # because ctrl hadn't caught up yet.
+        gripper_open = not gripper_state["closed"]
+        opened_this_step = gripper_open and not self._gripper_was_open
+        self._gripper_was_open = gripper_open
+
+        if opened_this_step:
             for grasped_name in list(self.grasped_objects.keys()):
                 self.release_object(grasped_name)
 
-        else:
-            # Find all objects in the scene
-            for i in range(self.mjmodel.nbody):
-                body_name = mujoco.mj_id2name(self.mjmodel, mujoco.mjtObj.mjOBJ_BODY, i)
-                if body_name is None:
-                    continue
+        # Grasping is triggered by contact with the rubber cups (or gripper) alone, regardless of
+        # gripper_state["closed"]: the object itself can be what's physically stopping the
+        # gripper from ever reaching a "closed" reading, so contact is already sufficient
+        # evidence the cups are on the object. Requiring "closed" too used to cause grasps to be
+        # missed (and the object to get shoved out from between the cups) whenever the closing
+        # motion hadn't yet reached the threshold by the time contact happened.
+        should_log = self.debug_logging and (
+            self.mjdata.time - self._last_debug_log_time >= self._debug_log_interval_seconds
+        )
+        if should_log:
+            self._last_debug_log_time = self.mjdata.time
 
-                # Skip non-object bodies
-                if not self._is_graspable_object(body_name):
-                    continue
+        any_graspable_found = False
+        for i in range(self.mjmodel.nbody):
+            body_name = mujoco.mj_id2name(self.mjmodel, mujoco.mjtObj.mjOBJ_BODY, i)
+            if body_name is None:
+                continue
 
-                is_in_contact, contact_force = self.is_object_in_contact_with_gripper(body_name)
+            if not self._is_graspable_object(body_name):
+                continue
+            any_graspable_found = True
 
-                # Only grasp if gripper is closed and in contact, and not already grasped
-                if gripper_state["closed"] and is_in_contact:
-                    if (
-                        body_name not in self.grasped_objects
-                        and body_name not in self._recently_released_objects
-                    ):
-                        obj_name = config.REPLACEMENTS[body_name]
-                        print(f"Grasping object: {obj_name} with contact force {contact_force}")
-                        self.grasp_object(body_name)
+            is_in_contact, contact_force = self.is_object_in_contact_with_gripper(body_name)
+
+            if should_log:
+                all_contacts = [c["other_body"] for c in self.get_body_contacts(body_name)]
+                print(
+                    f"[grasp debug] object={body_name} in_graspable_contact={is_in_contact} "
+                    f"all_contacts={all_contacts} gripper_closed={gripper_state['closed']} "
+                    f"gripper_ctrl={gripper_state['ctrl']:.4f} already_grasped={body_name in self.grasped_objects}"
+                )
+
+            if is_in_contact:
+                if (
+                    body_name not in self.grasped_objects
+                    and body_name not in self._recently_released_objects
+                ):
+                    obj_name = config.REPLACEMENTS[body_name]
+                    print(f"Grasping object: {obj_name} with contact force {contact_force}")
+                    self.grasp_object(body_name)
+
+        if should_log and not any_graspable_found:
+            print(
+                "[grasp debug] no bodies currently pass _is_graspable_object() "
+                "(check body naming / free-joint setup for your target object)"
+            )
+
+    def _get_grasp_eq_id(self, object_name: str) -> int:
+        """
+        Look up (and cache) the id of the pre-declared, normally-inactive weld equality
+        constraint that rigidly attaches `object_name` to the gripper attachment point.
+
+        Returns -1 if no such constraint was declared in the model for this object.
+        """
+        if object_name in self._grasped_eq_ids:
+            return self._grasped_eq_ids[object_name]
+
+        eq_id = mujoco.mj_name2id(
+            self.mjmodel, mujoco.mjtObj.mjOBJ_EQUALITY, f"grasp_{object_name}"
+        )
+        self._grasped_eq_ids[object_name] = eq_id
+        return eq_id
 
     def grasp_object(self, object_name: str) -> None:
         """
@@ -433,7 +530,22 @@ class GraspManager:
             self._recently_released_objects.pop(object_name, None)
             self._set_object_collisions_enabled(object_name, enabled=False)
 
-            # Weld constraint code removed for compatibility with MuJoCo Python API
+            # Rigidly weld the object to the gripper via a real equality constraint (enforced
+            # by the solver every substep) instead of only re-imposing the pose after the fact.
+            # anchor=(0,0,0) + relpose=(rel_pos_local, rel_quat) welds the object's origin to
+            # rel_pos_local/rel_quat away from the gripper attachment frame, exactly matching
+            # the relative transform captured above.
+            eq_id = self._get_grasp_eq_id(object_name)
+            if eq_id >= 0:
+                self.mjmodel.eq_data[eq_id, 0:3] = 0.0
+                self.mjmodel.eq_data[eq_id, 3:6] = rel_pos_local
+                self.mjmodel.eq_data[eq_id, 6:10] = rel_quat
+                self.mjdata.eq_active[eq_id] = 1
+            else:
+                print(
+                    f"No pre-declared grasp weld for {object_name}; "
+                    "falling back to per-step pose correction."
+                )
         except Exception as e:
             print(f"Error grasping object {object_name}: {e}")
 
@@ -449,21 +561,27 @@ class GraspManager:
             self._recently_released_objects[object_name] = (
                 self.mjdata.time + self.regrasp_cooldown_seconds
             )
-            # Weld constraint code removed for compatibility with MuJoCo Python API
+
+            eq_id = self._grasped_eq_ids.get(object_name, -1)
+            if eq_id >= 0:
+                self.mjdata.eq_active[eq_id] = 0
+
             del self.grasped_objects[object_name]
 
     def apply_grasp_constraints(self) -> None:
         """
-        Forcefully update the pose of all grasped objects to follow the gripper every step.
-        This ensures the object stays attached, regardless of MuJoCo weld constraint behavior.
-        Should be called in the control callback.
+        Fallback pose correction for grasped objects that have no pre-declared weld equality
+        constraint in the model. Objects with an active weld are already held rigidly by the
+        solver and don't need this. Should be called in the control callback.
         """
         if not self.grasped_objects:
             return
 
         try:
             for object_name, grasp_info in self.grasped_objects.items():
-                # Always update pose for free joint objects
+                eq_id = self._grasped_eq_ids.get(object_name, -1)
+                if eq_id >= 0:
+                    continue
                 self._constrain_object_to_gripper(object_name, grasp_info)
         except Exception as e:
             print(f"Error applying grasp constraints: {e}")

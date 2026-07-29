@@ -33,4 +33,13 @@
       <geom type="cylinder" size=".02 .04 .04" mass=".5" rgba=".8 .2 .2 1"/>
     </body>
   </worldbody>
+
+  <equality>
+    <!-- Inactive until GraspManager grasps the object: it sets eq_data (relative pose)
+         and flips eq_active on, so the solver rigidly welds the object to the gripper.
+         body1 is the reference frame for MuJoCo's weld (relpose locates body2 relative to
+         body1), so the gripper attachment point must be body1 and the object body2. -->
+    <weld name="grasp_object1" body1="link_grasp_center" body2="object1" active="false" solref="0.005 1"/>
+    <weld name="grasp_object2" body1="link_grasp_center" body2="object2" active="false" solref="0.005 1"/>
+  </equality>
 </mujoco>

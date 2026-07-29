@@ -403,7 +403,11 @@
                                   <joint name="rubber_left_y" type="hinge" axis="0 1 0" damping=".01" stiffness="1" springref="0"/>
                                   <geom class="visual" mesh="link_SG3_gripper_left_fingertip" mass="0.005" material="suction_rubber"/>
                                   <!-- <geom class="visual" type="box"  size="0.02 0.02 0.01" pos="0 0 0.01" mass="0.005" material="suction_rubber"/> -->
-                                  <geom type="box"  size="0.02 0.02 0.01" pos="0 0 0.01" class="rubber"/>
+                                  <!-- Sized/centered to match the visual mesh's bounding box (z spans -0.02 to
+                                       0.02): the old box (size z=0.01, pos z=0.01) only covered the outer half
+                                       of the pad, leaving the object-facing surface with no collision geometry
+                                       at all, so contact could fail even with the cups visibly on the object. -->
+                                  <geom type="box"  size="0.02 0.02 0.02" pos="0 0 0" class="rubber"/>
                                 </body>
                                 <body name="link_SG3_gripper_left_finger_aruco" pos="-0.14425 0.0014877 -0.005189" euler="0.19199 0.95993 3.1312"> 
                                   <geom material="Aruco_left_finger_Sticker" mesh="link_SG3_gripper_left_finger_aruco" class="visual" mass="3.6E-06" shellinertia="true"/>
@@ -423,7 +427,11 @@
                                   <joint name="rubber_right_y" type="hinge" axis="0 1 0" damping=".01" stiffness="1" springref="0"/>
                                   <geom class="visual" material="suction_rubber" mesh="link_SG3_gripper_right_fingertip" mass="0.005"/>
                                   <!-- <geom class="visual" type="box"  size="0.02 0.02 0.01" pos="0 0 0.01" mass="0.005" material="suction_rubber"/> -->
-                                  <geom type="box"   size="0.02 0.02 0.01" pos="0 0 0.01" class="rubber"/>
+                                  <!-- Sized/centered to match the visual mesh's bounding box (z spans -0.02 to
+                                       0.02): the old box (size z=0.01, pos z=0.01) only covered the outer half
+                                       of the pad, leaving the object-facing surface with no collision geometry
+                                       at all, so contact could fail even with the cups visibly on the object. -->
+                                  <geom type="box"   size="0.02 0.02 0.02" pos="0 0 0" class="rubber"/>
                                 </body>
                                 <body name="link_SG3_gripper_right_finger_aruco" pos="0.14426 0 0.005189" euler="-2.9496 -0.95993 3.1416"> 
                                   <geom material="Aruco_right_finger_Sticker" mesh="link_SG3_gripper_right_finger_aruco" class="visual" mass="3.6E-06" shellinertia="true"/>
