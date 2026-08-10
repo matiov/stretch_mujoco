@@ -1,6 +1,8 @@
 import contextlib
 from dataclasses import dataclass
-from multiprocessing.managers import DictProxy, SyncManager
+import math
+import multiprocessing
+from multiprocessing.managers import AcquirerProxy, DictProxy, SyncManager
 import os
 import signal
 import threading
@@ -109,27 +111,78 @@ class MujocoServerProxies:
 
 
 class BaseController:
+    """
+    Note on `push_command`/`start_pose`: a multi-joint FollowJointTrajectory goal that
+    includes `translate_mobile_base` alongside other joints (lift/arm/wrist - the
+    common case for an IK-driven reach that also has to shift the base) dispatches one
+    command per joint from the driver process in a tight loop. Each dispatch does its
+    own read-modify-write of the shared command proxy. Before `_ctrl_callback` held
+    `_command_lock` around that cycle, a dispatch landing between this process's read
+    and write-back could revive an already-processed `translate_mobile_base` trigger,
+    re-running `push_command` and resetting `start_pose` to wherever the base had
+    already gotten to. Each reset restarts the "distance traveled so far" measurement
+    `_base_translate_by` uses to know when to stop, so the base could be made to chase
+    a moving target well past the originally commanded distance - not settling within
+    the trajectory server's wait timeout and getting reported as obstructed even
+    though nothing was actually in its way.
+    """
+
+    # Below this, the ramped velocity is treated as "stopped" and braking ends -
+    # comfortably tighter than wait_while_is_moving's own settling atol (0.0005 in
+    # stretch_mujoco_simulator.py), so it never masks that check.
+    _BRAKE_DONE_LINEAR = 1e-4  # m/s
+    _BRAKE_DONE_ANGULAR = 1e-4  # rad/s
+
+    # Remaining distance/angle below which a move is considered "arrived" and the
+    # command is cleared outright, rather than fed through the decelerate-to-stop
+    # profile in _speed_for_remaining (which asymptotes towards, but never exactly
+    # reaches, zero remaining distance).
+    _ARRIVED_LINEAR = 0.002  # m
+    _ARRIVED_ANGULAR = 0.005  # rad
 
     def __init__(self, mujoco_server: "MujocoServer") -> None:
         self.mujoco_server = mujoco_server
         self.last_command: CommandMove | CommandBaseVelocity | None = None
         self.start_pose = np.array([0, 0, 0])
+        # Ramped (not commanded) velocity - see _set_base_velocity.
+        self._current_v_linear = 0.0
+        self._current_omega = 0.0
+        self._braking = False
 
     def push_command(self, command: CommandMove | CommandBaseVelocity):
         """Push a command to the base. Call `update()` to set the next trajectory."""
         self.last_command = command
         self.start_pose = self.get_base_pose()
+        self._braking = False
 
     def _clear_command(self, is_stop_motion: bool):
         self.last_command = None
 
+        # Braking is also ramped (see _set_base_velocity), so it takes more than
+        # one update() to bring the wheels to rest - keep ticking it from update()
+        # below until the ramp actually reaches zero, instead of snapping the
+        # velocity target to zero in a single step here.
         if is_stop_motion:
-            self._set_base_velocity(0.0, 0.0)
+            self._braking = True
 
     def update(self):
         """
         The update method to set mujoco ctrl's for the base while in motion.
         """
+        if self._braking:
+            self._set_base_velocity(0.0, 0.0)
+            if (
+                abs(self._current_v_linear) < self._BRAKE_DONE_LINEAR
+                and abs(self._current_omega) < self._BRAKE_DONE_ANGULAR
+            ):
+                self._braking = False
+                # Snap the last, negligible-but-nonzero ramp residual to an exact
+                # stop rather than leaving the wheels creeping at ~0.1 mm/s forever.
+                self._current_v_linear = 0.0
+                self._current_omega = 0.0
+                self._set_base_velocity(0.0, 0.0)
+            return
+
         if self.last_command is None:
             return
 
@@ -159,6 +212,17 @@ class BaseController:
 
         raise NotImplementedError(f"Actuator {command.actuator_name} is not supported.")
 
+    @staticmethod
+    def _speed_for_remaining(remaining: float, cruise_speed: float, max_accel: float) -> float:
+        """
+        Target speed (magnitude) for a point mass decelerating at `max_accel` to land
+        at exactly zero once `remaining` reaches zero: v = sqrt(2 * a * d), capped at
+        cruise speed. Used to start slowing down *before* the target is reached
+        (instead of driving at cruise speed until the target is passed and only then
+        braking), so the base arrives instead of overshooting and having to walk back.
+        """
+        return min(cruise_speed, math.sqrt(2.0 * max_accel * max(remaining, 0.0)))
+
     def _base_translate_by(self, x_inc: float) -> None:
         """
         Translate the base by a certain w.r.t base global pose
@@ -166,10 +230,14 @@ class BaseController:
         start_pose = self.start_pose[:2]
 
         sign = 1 if x_inc > 0 else -1
-        if not np.linalg.norm(self.get_base_pose()[:2] - start_pose) <= abs(x_inc):
+        remaining = abs(x_inc) - np.linalg.norm(self.get_base_pose()[:2] - start_pose)
+        if remaining <= self._ARRIVED_LINEAR:
             return self._clear_command(is_stop_motion=True)
 
-        self._set_base_velocity(config.base_motion["default_x_vel"] * sign, 0)
+        speed = self._speed_for_remaining(
+            remaining, config.base_motion["default_x_vel"], config.base_motion["max_linear_accel"]
+        )
+        self._set_base_velocity(speed * sign, 0)
 
     def _base_rotate_by(self, theta_inc: float) -> None:
         """
@@ -177,30 +245,41 @@ class BaseController:
         """
         start_pose = self.start_pose[-1]
         sign = 1 if theta_inc > 0 else -1
-        if not abs(start_pose - self.get_base_pose()[-1]) <= abs(theta_inc):
+        remaining = abs(theta_inc) - abs(start_pose - self.get_base_pose()[-1])
+        if remaining <= self._ARRIVED_ANGULAR:
             return self._clear_command(is_stop_motion=True)
 
-        self._set_base_velocity(0, config.base_motion["default_r_vel"] * sign)
+        speed = self._speed_for_remaining(
+            remaining, config.base_motion["default_r_vel"], config.base_motion["max_angular_accel"]
+        )
+        self._set_base_velocity(0, speed * sign)
 
     def _set_base_velocity(self, v_linear: float, omega: float) -> None:
         """
-        Set the base velocity of the robot
+        Ramp the base towards (v_linear, omega) and drive the wheels at the ramped
+        velocity, rather than commanding the target directly.
+
         Args:
-            v_linear: float, linear velocity
-            omega: float, angular velocity
+            v_linear: float, target linear velocity
+            omega: float, target angular velocity
         """
-        w_left, w_right = utils.diff_drive_inv_kinematics(v_linear, omega)
-        # if self.mujoco_server.physics_fps_counter._fps_counter == 1:
-        #     click.secho(
-        #         f"Received velocities: {v_linear, omega}",
-        #         fg="green",
-        #     )
-        #     click.secho(
-        #         f"Setting velocity to wheels: {w_left, w_right}",
-        #         fg="green",
-        #     )
-        self.mujoco_server.mjdata.actuator(Actuators.left_wheel_vel.name).ctrl = w_left
-        self.mujoco_server.mjdata.actuator(Actuators.right_wheel_vel.name).ctrl = w_right
+        # Ramping the commanded velocity.
+        dt = self.mujoco_server.mjmodel.opt.timestep
+        max_dv = config.base_motion["max_linear_accel"] * dt
+        max_domega = config.base_motion["max_angular_accel"] * dt
+        self._current_v_linear += np.clip(v_linear - self._current_v_linear, -max_dv, max_dv)
+        self._current_omega += np.clip(omega - self._current_omega, -max_domega, max_domega)
+
+        w_left, w_right = utils.diff_drive_inv_kinematics(
+            self._current_v_linear, self._current_omega
+        )
+
+        left_actuator = self.mujoco_server.mjdata.actuator(Actuators.left_wheel_vel.name)
+        right_actuator = self.mujoco_server.mjdata.actuator(Actuators.right_wheel_vel.name)
+        left_gear = self.mujoco_server.mjmodel.actuator(Actuators.left_wheel_vel.name).gear[0]
+        right_gear = self.mujoco_server.mjmodel.actuator(Actuators.right_wheel_vel.name).gear[0]
+        left_actuator.ctrl = w_left * left_gear
+        right_actuator.ctrl = w_right * right_gear
 
 
 class MujocoServer:
@@ -222,6 +301,7 @@ class MujocoServer:
         cameras_to_use: list[StretchCameras],
         start_translation: list | None,
         start_rotation_quat: list | None,
+        command_lock: "AcquirerProxy | None" = None,
     ):
         server = cls(
             scene_xml_path,
@@ -230,6 +310,7 @@ class MujocoServer:
             data_proxies,
             start_translation,
             start_rotation_quat,
+            command_lock,
         )
         server.run(
             show_viewer_ui=show_viewer_ui,
@@ -272,12 +353,19 @@ class MujocoServer:
         data_proxies: MujocoServerProxies,
         start_translation: list | None,
         start_rotation_quat: list | None,
+        command_lock: "AcquirerProxy | None" = None,
     ):
         """
         Initialize the Simulator handle with a scene
         Args:
             scene_xml_path: str, path to the scene xml file
             model: MjModel, Mujoco model object
+            command_lock: cross-process lock shared with the `StretchMujocoSimulator`
+                client. Must be held around every read-modify-write of the shared
+                command proxy (see `_ctrl_callback`) so a client dispatch (`move_to`/
+                `move_by`/...) can't land between this process's read and write-back
+                and get silently dropped or re-triggered. Falls back to a fresh,
+                unshared lock for single-process use (e.g. the `tests/` scripts).
         """
         if scene_xml_path is None:
             scene_xml_path = utils.default_scene_xml_path
@@ -295,6 +383,8 @@ class MujocoServer:
         self._base_in_pos_motion = False
 
         self._stop_mujoco_process_event = stop_mujoco_process_event
+
+        self._command_lock = command_lock if command_lock is not None else multiprocessing.Lock()
 
         self.data_proxies = data_proxies
 
@@ -532,7 +622,16 @@ class MujocoServer:
         self._publish_contacts()
 
         self.pull_status()
-        self.push_command(self.data_proxies.get_command())
+        # Hold the lock across the whole read-modify-write cycle (get_command(),
+        # push_command()'s in-place mutation of trigger flags, and its final
+        # set_command()). StretchMujocoSimulator's move_to()/move_by()/etc. acquire
+        # the same cross-process lock around their own get/set pair; without this,
+        # a client dispatch landing between this process's read and write-back gets
+        # silently overwritten (its trigger lost) or reasserted (its trigger revived
+        # after this process already believed it was cleared) - see the note above
+        # BaseController for the base-translation symptom this caused.
+        with self._command_lock:
+            self.push_command(self.data_proxies.get_command())
 
     def _publish_contacts(self) -> None:
         """

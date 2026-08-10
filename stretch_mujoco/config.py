@@ -8,7 +8,14 @@ robot_settings = {
 depth_limits = {"d405": 1, "d435i": 10}
 
 
-base_motion = {"timeout": 15, "default_x_vel": 0.3, "default_r_vel": 1.0}
+base_motion = {
+    "timeout": 15,
+    "default_x_vel": 0.3,
+    "default_r_vel": 1.0,
+    # Acceleration caps for BaseController's velocity ramp (see _set_base_velocity).
+    "max_linear_accel": 0.5,  # m/s^2
+    "max_angular_accel": 1.5,  # rad/s^2
+}
 
 # Default free-camera pose for the Mujoco UI viewer.
 # Tune these values if you want a different startup viewpoint.
