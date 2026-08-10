@@ -1,5 +1,5 @@
 import atexit
-from multiprocessing import Lock, Manager, Process
+from multiprocessing import Manager, Process
 
 import multiprocessing
 import platform
@@ -74,7 +74,13 @@ class StretchMujocoSimulator:
 
         self.data_proxies = MujocoServerProxies.default(self._manager)
 
-        self._command_lock = Lock()
+        # Manager-backed (not a bare multiprocessing.Lock()): the bare SemLock is tied
+        # to whatever start-method context is active when it's constructed, and
+        # start() below forces the "spawn" context for the server process regardless
+        # of what was active here - a mismatched fork/spawn SemLock segfaults on
+        # __enter__ in the child. A manager Lock is proxied through the already-running
+        # manager process, so it works the same regardless of the child's start method.
+        self._command_lock = self._manager.Lock()
 
         # Per-actuator last-sampled-position cache used by `wait_while_is_moving()`
         # to detect settling. Instance-level (not shared across simulator instances)
@@ -123,6 +129,7 @@ class StretchMujocoSimulator:
                 self._cameras_to_use,
                 self._start_translation,
                 self._start_rotation_quat,
+                self._command_lock,
             ),
             daemon=False,  # We're gonna handle terminating this in stop_mujoco_process()
         )
