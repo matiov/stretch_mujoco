@@ -1,9 +1,14 @@
+import numpy as np
+
 robot_settings = {
     "wheel_diameter": 0.1016,
     "wheel_separation": 0.3153,
     "gripper_min_max": (-0.376, 0.56),
     "sim_gripper_min_max": (-0.02, 0.04),
 }
+
+# Fixed local-frame rotation to enable proper grasp alignment when teleporting the object.
+GRASP_FRAME_CORRECTION_WXYZ = np.array([0.4995209, -0.50092096, 0.4970208, -0.50252103])
 
 depth_limits = {"d405": 1, "d435i": 10}
 

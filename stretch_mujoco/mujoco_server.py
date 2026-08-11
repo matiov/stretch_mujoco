@@ -847,8 +847,15 @@ class MujocoServer:
                 if jnt_adr >= 0 and self.mjmodel.jnt_type[jnt_adr] == mujoco.mjtJoint.mjJNT_FREE:
                     qadr = int(self.mjmodel.jnt_qposadr[jnt_adr])
                     qdadr = int(self.mjmodel.jnt_dofadr[jnt_adr])
-                    grasp_pos = self.mjdata.body("link_grasp_center").xpos.copy()
+                    grasp_body = self.mjdata.body("link_grasp_center")
+                    grasp_pos = grasp_body.xpos.copy()
+                    # Also match the gripper's orientation, not just its position.
+                    grasp_quat = np.zeros(4)
+                    mujoco._functions.mju_mulQuat(
+                        grasp_quat, grasp_body.xquat.copy(), config.GRASP_FRAME_CORRECTION_WXYZ
+                    )
                     self.mjdata.qpos[qadr : qadr + 3] = grasp_pos
+                    self.mjdata.qpos[qadr + 3 : qadr + 7] = grasp_quat
                     self.mjdata.qvel[qdadr : qdadr + 6] = 0
                     mujoco._functions.mj_forward(self.mjmodel, self.mjdata)
                 self.grasp_manager.grasp_object(resolved_name)

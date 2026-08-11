@@ -71,8 +71,10 @@ class GraspManager:
         self.gripper_closed_threshold = (
             0.01  # Joint position threshold (meters) - gripper closed when < 0
         )
-        self.contact_force_threshold = 0.01  # Minimum contact force to consider grasping
-        self.regrasp_cooldown_seconds = 0.15
+         # Minimum contact force to consider grasping.
+        self.contact_force_threshold = 0.01
+        # Timeout to ensure the object is released properly.
+        self.regrasp_cooldown_seconds = 2.0
 
     def get_gripper_state(self) -> Dict:
         """
